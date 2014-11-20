@@ -1,8 +1,14 @@
 package passwdldap;
 
 import java.io.Console;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import static java.lang.System.exit;
+import java.util.Properties;
 import javax.naming.NamingException;
 import org.apache.commons.cli.*;
 
@@ -17,7 +23,7 @@ public class Passwdldap {
     //howto: $ openssl x509 -outform der -in cacert.pem -out cacert.der
     //howto: $ keytool -import -alias ldapmgmt -keystore cacerts -file ./cacert.der
     //note: all certs must be imported into this keystore!!
-    //consts:
+//consts:
     static Boolean verbose_en = false;
 
     //common setting:    
@@ -31,48 +37,72 @@ public class Passwdldap {
     static String ldapUser = "";            //user to be manipulated in LDAP
     static String ldapBindUser = "";        //user used to bind to ldap
 
-    
     //ActiveDirectory connection globals;
     static String ldapBaseNameAd;
     static String ad_root;
     static String adBindUser = "";          //user used to bind to ad
 
-
     //global vars
     static String current_user = "";
-    
+
     static String ldapBindUserPwd = "";     //his password
     static String adBindUserPwd = "";     //his password
-    
-    static Boolean adminMode = false;
+
+    static Boolean adminMode;
 
     public static void main(String[] args) {
 
-        //<settings>
-        //TODO: load from file:
-        //general settings:
-        truststorepath = "/home/jose/temp/cacerts";
-        truststorepass = "jahoda";
-        ad_root = "Administrator";
+        Properties prop = new Properties();
+        InputStream input = null;
 
-        //openldap settings:
-        ldapBaseNameLdap = "dc=cluster,dc=net";
-        ldap_root = "ldaproot";
-        securityprincipalsuffix = "ou=People";
+        String ldap1_hostname_config = "";
+        String ldap1_port_config = "";
+        String ldap2_hostname_config = "";
+        String ldap2_port_config = "";
 
-        LdapHost mgmt1 = new LdapHost("mgmt1", 390);
-        LdapHost mgmt2 = new LdapHost("mgmt2", 390);
-        LdapHost mgmt = null;
+        String ad_hostname_config = "";
+        String ad_port_config = "";
 
-        //AD settings:
-        LdapHost winadmin = new LdapHost("10.1.0.39", 636);
+        String truststore_path = "";
+        String truststore_pass = "";
 
-        ldapBaseNameAd = "CN=users,DC=win,DC=local";
+        try {
+            input = new FileInputStream("config.properties");
+            prop.load(input);
+
+            ldap1_hostname_config = prop.getProperty("server_ldap1");
+            ldap1_port_config = prop.getProperty("server_ldap1_port");
+            ldap2_hostname_config = prop.getProperty("server_ldap2");
+            ldap2_port_config = prop.getProperty("server_ldap2_port");
+            ldapBaseNameLdap = prop.getProperty("ldap_base");
+            ldap_root = prop.getProperty("ldap_root");
+            securityprincipalsuffix = prop.getProperty("ldap_ou");
+
+            ad_hostname_config = prop.getProperty("server_ad");
+            ad_port_config = prop.getProperty("server_ad_port");
+            ldapBaseNameAd = prop.getProperty("ad_base");
+            ad_root = prop.getProperty("ad_root");
+
+            truststore_path = prop.getProperty("truststore_path");
+            truststore_pass = prop.getProperty("truststore_pass");
+
+        } catch (FileNotFoundException ex) {
+            System.err.println("Configuration settings file doesnt exists, creating template one..");
+            createConfFile();
+            exit(1);
+        } catch (IOException ex) {
+            System.err.println("Configuration settings file I/O error. ");
+            exit(1);
+        }
+
+        LdapHost mgmt1 = new LdapHost(ldap1_hostname_config, Integer.parseInt(ldap1_port_config));
+        LdapHost mgmt2 = new LdapHost(ldap2_hostname_config, Integer.parseInt(ldap2_port_config));  //not used now
+        LdapHost winadmin = new LdapHost(ad_hostname_config, Integer.parseInt(ad_port_config));
 
         // </settings>
         parseArgs(args);    //parse CLI args
 
-        setupTrustStore(truststorepath, truststorepass);
+        setupTrustStore(truststore_path, truststore_pass);
 
         //try if all needed directory servers are up:
         verbose("checking if directory servers are up..");
@@ -125,16 +155,15 @@ public class Passwdldap {
         }
 
         //LDAP and AD ok -> lets ask for password and change it!
-        
-        String newPassword1="";
-        
+        String newPassword1 = "";
+
         try {
             newPassword1 = askPass2("Enter new password");
         } catch (Exception ex) {
             System.err.println("Cannot create console;exit.");
             exit(1);
         }
-        
+
         //change password in openLDAP
         try {
             lcw.changePassword(ldapUser, newPassword1);
@@ -146,9 +175,9 @@ public class Passwdldap {
 
         //change password in AD
         try {
-            if (!adminMode){
+            if (!adminMode) {
                 adw.changePassword(adBindUser, adBindUserPwd, newPassword1);
-            }else{
+            } else {
                 adw.resetPassword(ldapUser, newPassword1);
             }
             verbose("ActiveDirectory operation finished.");
@@ -189,8 +218,8 @@ public class Passwdldap {
             System.err.println("Error when parsing CLI arguments..: " + ex.getMessage());
             exit(1);
         }
-        
-        if (cmd.hasOption('h')){
+
+        if (cmd.hasOption('h')) {
             showHelp();
             exit(0);
         }
@@ -228,6 +257,7 @@ public class Passwdldap {
                 System.exit(6);
             }
 
+            adminMode = false;
             ldapUser = current_user;
 
         }
@@ -244,6 +274,7 @@ public class Passwdldap {
                 System.exit(6);
             }
 
+            adminMode = false;
             ldapUser = current_user;
 
         }
@@ -287,8 +318,8 @@ public class Passwdldap {
         }
 
     }
-    
-    private static void showHelp(){
+
+    private static void showHelp() {
         System.out.println("---------------------------");
         System.out.println("passwd.ldap - Update a user’s authentication tokens(s) in LDAP and AD directories");
         System.out.println("");
@@ -310,6 +341,48 @@ public class Passwdldap {
         System.out.println("AUTHORS");
         System.out.println("\tKristyna Kaslova,Miroslav Tamas,Josef Dvoracek, Bull s.r.o. 2014");
         System.out.println("---------------------------");
+    }
+
+    public static void createConfFile() {
+        Properties prop = new Properties();
+        OutputStream output = null;
+
+        try {
+
+            output = new FileOutputStream("config.properties");
+
+            // set the properties values
+            prop.setProperty("server_ldap1", "#primary ldap server");
+            prop.setProperty("server_ldap1_port", "#primary ldap port");
+            prop.setProperty("server_ldap2", "#secondary ldap server");
+            prop.setProperty("server_ldap2_port", "#secondary ldap server port");
+            prop.setProperty("ldap_base", "#ldap base name eg dc=company,dc=com");
+            prop.setProperty("ldap_root", "#login of ldap root user");
+            prop.setProperty("ldap_ou", "# ou of regular users eg. ou=People");
+
+            prop.setProperty("server_ad", "#active directory server");
+            prop.setProperty("server_ad_port", "#active directory SSL port - probably 636");
+            prop.setProperty("ad_base", "#users base name CN=users,DC=contoso,DC=com");
+            prop.setProperty("ad_root", "# login name of ad root user - eg. administrator");
+
+            prop.setProperty("truststore_path", "#path to keystore with keys to ldaps and ad");
+            prop.setProperty("truststore_pass", "#pass to this keystore");
+
+            // save properties to project root folder
+            prop.store(output, null);
+
+        } catch (IOException io) {
+            io.printStackTrace();
+        } finally {
+            if (output != null) {
+                try {
+                    output.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
     }
 
 //    public static void printSearchEnumeration(NamingEnumeration retEnum) {
