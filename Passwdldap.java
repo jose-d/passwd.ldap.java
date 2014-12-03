@@ -49,6 +49,8 @@ public class Passwdldap {
     static String adBindUserPwd = "";     //his password
 
     static Boolean adminMode;
+    
+    static String confPath="/etc/ldap.properties";
 
     public static void main(String[] args) {
 
@@ -65,9 +67,9 @@ public class Passwdldap {
 
         String truststore_path = "";
         String truststore_pass = "";
-
+        
         try {
-            input = new FileInputStream("config.properties");
+            input = new FileInputStream(confPath);
             prop.load(input);
 
             ldap1_hostname_config = prop.getProperty("server_ldap1");
@@ -349,7 +351,7 @@ public class Passwdldap {
 
         try {
 
-            output = new FileOutputStream("config.properties");
+            output = new FileOutputStream(confPath);
 
             // set the properties values
             prop.setProperty("server_ldap1", "#primary ldap server");
@@ -384,7 +386,7 @@ public class Passwdldap {
 
         }
     }
-
+    
 //    public static void printSearchEnumeration(NamingEnumeration retEnum) {
 //        try {
 //            while (retEnum.hasMore()) {
